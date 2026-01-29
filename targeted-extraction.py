@@ -44,27 +44,39 @@ def is_frame_valid(results):
     if results.face_landmarks is None:
         return False
     
-    # 2. Calculate Face Center (X-axis) 
-    face_x_center = results.face_landmarks.landmark[5].x
+    # 2. Pose Logic
+    # If pose detection failed entirely, the frame is still valid
+    if results.pose_landmarks is None:
+        return True
+
+    landmarks = results.pose_landmarks.landmark
+    left_shoulder = landmarks[11]
+    right_shoulder = landmarks[12]
+
+    is_left_visible = left_shoulder.visibility > VISIBILITY_THRESHOLD
+    is_right_visible = right_shoulder.visibility > VISIBILITY_THRESHOLD
+
+    # 3. Symmetry Check
+    # "If one shoulder is present, the other must also be present"
+    # This XOR check returns False if they don't match (one True, one False)
+    if is_left_visible != is_right_visible:
+        return False
     
-    # 3. Shoulder Logic
-    if results.pose_landmarks:
-        landmarks = results.pose_landmarks.landmark
-        left_shoulder = landmarks[11]
-        right_shoulder = landmarks[12]
+    # 4. Centering Check (Only applies if BOTH are visible)
+    if is_left_visible and is_right_visible:
+        face_x_center = results.face_landmarks.landmark[5].x
         
-        # Only apply the spatial check if both shoulders are actually visible
-        if (left_shoulder.visibility > VISIBILITY_THRESHOLD and 
-            right_shoulder.visibility > VISIBILITY_THRESHOLD):
-            
-            # From camera perspective: 
-            # Right side of image (Left Shoulder) > Center
-            # Left side of image (Right Shoulder) < Center
-            is_centered = (right_shoulder.x < face_x_center < left_shoulder.x)
-            
-            if not is_centered:
-                return False
-                
+        # From camera perspective: 
+        # Right side of image (Left Shoulder 11) > Center
+        # Left side of image (Right Shoulder 12) < Center
+        is_centered = (right_shoulder.x < face_x_center < left_shoulder.x)
+        
+        if not is_centered:
+            return False
+
+    # Returns True if:
+    # a) Both shoulders are invisible (Valid)
+    # b) Both shoulders are visible AND centered (Valid)
     return True
 
 def draw_landmarks(image, results):
@@ -78,13 +90,23 @@ def draw_landmarks(image, results):
             x, y = int(pt.x * img_w), int(pt.y * img_h)
             cv2.circle(annotated_image, (x, y), 2, (0, 255, 0), -1)
 
-    # Draw Pose Landmarks
+    # Draw Pose Landmarks ONLY if BOTH shoulders are visible
     if results.pose_landmarks:
-        for idx in POSE_IDX:
-            pt = results.pose_landmarks.landmark[idx]
-            if pt.visibility > VISIBILITY_THRESHOLD:
-                x, y = int(pt.x * img_w), int(pt.y * img_h)
-                cv2.circle(annotated_image, (x, y), 5, (255, 0, 0), -1)
+        landmarks = results.pose_landmarks.landmark
+        
+        # Check Shoulders (11 and 12) visibility
+        left_shoulder_vis = landmarks[11].visibility > VISIBILITY_THRESHOLD
+        right_shoulder_vis = landmarks[12].visibility > VISIBILITY_THRESHOLD
+        
+        # "All or Nothing": Only draw if both shoulders are detected
+        if left_shoulder_vis and right_shoulder_vis:
+            for idx in POSE_IDX:
+                pt = landmarks[idx]
+                # Even if shoulders are valid, individual points (like hands) 
+                # might still be hidden, so we check them individually too
+                if pt.visibility > VISIBILITY_THRESHOLD:
+                    x, y = int(pt.x * img_w), int(pt.y * img_h)
+                    cv2.circle(annotated_image, (x, y), 5, (255, 0, 0), -1)
     
     return annotated_image
 
@@ -216,7 +238,7 @@ def process_batch(input_root, output_root):
 
 if __name__ == "__main__":
     INPUT_ROOT = "Train"
-    OUTPUT_ROOT = "Processed_Dataset"
+    OUTPUT_ROOT = "Targeted_Dataset"
     
     print(f"Starting batch process from: {INPUT_ROOT}")
     process_batch(INPUT_ROOT, OUTPUT_ROOT)
