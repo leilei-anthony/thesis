@@ -15,7 +15,7 @@ from scipy.signal import find_peaks
 # CONFIGURATION & CONSTANTS
 # ---------------------------------------------------------
 VISIBILITY_THRESHOLD = 0.5 
-NUM_CHANGEPOINTS = 3  # We want the top 3 most significant transitions
+NUM_CHANGEPOINTS = 5  # We want the top 3 most significant transitions
 PEAK_DISTANCE = 15     # Minimum frames between selected points
 
 DLIB_68_IDXS = [
@@ -152,6 +152,27 @@ def save_frame_data(frame, results, output_dir, file_prefix):
     # 3. Prepare the base annotated image
     final_annotated_img = draw_landmarks(frame, results)
 
+    # --- DYNAMIC TOP-RIGHT PLACEMENT ---
+    img_h, img_w, _ = final_annotated_img.shape
+    text_str = f"Frame: {file_prefix}"
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    scale = 0.6
+    thickness = 2
+
+    # Calculate the width and height of the text box
+    (t_w, t_h), _ = cv2.getTextSize(text_str, font, scale, thickness)
+    
+    # Position: image_width - text_width - margin
+    # We use 20px as a margin from the right edge
+    text_x = img_w - t_w - 20
+    text_y = 30 # Distance from the top
+
+    # Draw outline for better visibility
+    cv2.putText(final_annotated_img, text_str, (text_x, text_y), font, scale, (0, 0, 0), thickness + 2)
+    # Draw actual text (Yellow)
+    cv2.putText(final_annotated_img, text_str, (text_x, text_y), font, scale, (0, 255, 255), thickness)
+
+
     # 4. If AUs were detected, draw them and save CSV
     if not detected_data.empty:
         # Get row 0 (the first face found)
@@ -235,6 +256,8 @@ def process_batch(input_root, output_root):
             if filename.lower().endswith(video_extensions):
                 full_video_path = os.path.join(dirpath, filename)
                 relative_path = os.path.relpath(dirpath, input_root)
+                
+                
                 target_output_dir = os.path.join(output_root, relative_path, os.path.splitext(filename)[0])
                 
                 print(f"Processing: {filename}")
@@ -245,7 +268,7 @@ def process_batch(input_root, output_root):
 
 if __name__ == "__main__":
     INPUT_ROOT = "Train"
-    OUTPUT_ROOT = "Changepoint_Dataset"
+    OUTPUT_ROOT = str(NUM_CHANGEPOINTS) + "_Changepoint_Dataset"
     
     print(f"Starting batch process from: {INPUT_ROOT}")
     process_batch(INPUT_ROOT, OUTPUT_ROOT)

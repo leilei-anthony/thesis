@@ -160,6 +160,26 @@ def save_frame_data(frame, results, output_dir, file_prefix):
     # 3. Prepare the base annotated image
     final_annotated_img = draw_landmarks(frame, results)
 
+    # --- DYNAMIC TOP-RIGHT PLACEMENT ---
+    img_h, img_w, _ = final_annotated_img.shape
+    text_str = f"Frame: {file_prefix}"
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    scale = 0.6
+    thickness = 2
+    
+    # Calculate the width and height of the text box
+    (t_w, t_h), _ = cv2.getTextSize(text_str, font, scale, thickness)
+    
+    # Position: image_width - text_width - margin
+    # We use 20px as a margin from the right edge
+    text_x = img_w - t_w - 20
+    text_y = 30 # Distance from the top
+    
+    # Draw outline for better visibility
+    cv2.putText(final_annotated_img, text_str, (text_x, text_y), font, scale, (0, 0, 0), thickness + 2)
+    # Draw actual text (Yellow)
+    cv2.putText(final_annotated_img, text_str, (text_x, text_y), font, scale, (0, 255, 255), thickness)
+
     # 4. If AUs were detected, draw them and save CSV
     if not detected_data.empty:
         # Get row 0 (the first face found)
@@ -190,7 +210,7 @@ def extract_targeted_frames(video_path, output_dir):
             results = holistic.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
             if is_frame_valid(results):
                 start_idx = i
-                save_frame_data(frame, results, output_dir, "frame_1_start")
+                save_frame_data(frame, results, output_dir, f"targeted_1_frame_{i}")
                 break
 
         if start_idx is None:
@@ -207,7 +227,7 @@ def extract_targeted_frames(video_path, output_dir):
             results = holistic.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
             if is_frame_valid(results):
                 end_idx = i
-                save_frame_data(frame, results, output_dir, "frame_3_end")
+                save_frame_data(frame, results, output_dir, f"targeted_3_frame_{i}")
                 break
 
         # Step 3: Midpoint
@@ -217,7 +237,7 @@ def extract_targeted_frames(video_path, output_dir):
             ret, frame = cap.read()
             if ret:
                 results = holistic.process(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-                save_frame_data(frame, results, output_dir, "frame_2_mid")
+                save_frame_data(frame, results, output_dir, f"targeted_2_frame_{mid_idx}")
 
     cap.release()
 
