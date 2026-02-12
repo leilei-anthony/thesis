@@ -15,7 +15,7 @@ from scipy.signal import find_peaks
 # CONFIGURATION & CONSTANTS
 # ---------------------------------------------------------
 VISIBILITY_THRESHOLD = 0.5 
-NUM_CHANGEPOINTS = 5  # We want the top 3 most significant transitions
+NUM_CHANGEPOINTS = 6  # We want the top 3 most significant transitions
 PEAK_DISTANCE = 15     # Minimum frames between selected points
 
 DLIB_68_IDXS = [
