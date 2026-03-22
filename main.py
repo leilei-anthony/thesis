@@ -43,17 +43,29 @@ except ImportError:
 
 class VideoFeatureExtractor:
     def __init__(self, openface_bin_path="FeatureExtraction", output_root="output", 
-                 extraction_mode="targeted", num_changepoints=6):
+                 extraction_mode="targeted", num_changepoints=6, labels_csv_path=None):
         """
         :param openface_bin_path: Path to the OpenFace 'FeatureExtraction' executable.
         :param output_root: Directory where all results will be saved.
         :param extraction_mode: "targeted" or "changepoint"
         :param num_changepoints: Number of frames to extract in changepoint mode
+        :param labels_csv_path: Path to AllLabels.csv
         """
         self.openface_bin = openface_bin_path
         self.output_root = Path(output_root)
         self.extraction_mode = extraction_mode
         self.num_changepoints = num_changepoints
+        
+        # Load labels if provided
+        self.labels_df = None
+        if labels_csv_path and os.path.exists(labels_csv_path):
+            print(f"Loading labels from {labels_csv_path}...")
+            self.labels_df = pd.read_csv(labels_csv_path)
+            # Ensure ClipID is string and stripped
+            if 'ClipID' in self.labels_df.columns:
+                self.labels_df['ClipID'] = self.labels_df['ClipID'].astype(str).str.strip()
+            else:
+                print("Warning: 'ClipID' column not found in labels CSV.")
         
         # Initialize MediaPipe Holistic
         self.holistic = mp_holistic.Holistic(
@@ -193,6 +205,7 @@ class VideoFeatureExtractor:
             print()
 
     def process_single_video(self, video_path):
+        video_filename = Path(video_path).name
         video_name = Path(video_path).stem
         video_output_dir = self.output_root / video_name
         raw_dir = video_output_dir / "raw_frames"
@@ -365,6 +378,20 @@ class VideoFeatureExtractor:
             
             # Create combined row with frame_id as the first entry
             combined_row = {'frame_id': i}
+            
+            # Add labels if available
+            if self.labels_df is not None:
+                video_labels = self.labels_df[self.labels_df['ClipID'] == video_filename]
+                if not video_labels.empty:
+                    # Add Boredom, Engagement, Confusion, Frustration
+                    for label_col in ['Boredom', 'Engagement', 'Confusion', 'Frustration']:
+                        if label_col in video_labels.columns:
+                            combined_row[label_col] = video_labels.iloc[0][label_col]
+                else:
+                    # Fill with NaN if not found
+                    for label_col in ['Boredom', 'Engagement', 'Confusion', 'Frustration']:
+                        combined_row[label_col] = np.nan
+
             combined_row.update(row.to_dict())
             
             if frame_num < len(mediapipe_features_all):
@@ -409,11 +436,12 @@ class VideoFeatureExtractor:
 if __name__ == "__main__":
     # --- CONFIGURATION ---
     OPENFACE_PATH = "C:\\OpenFace\\FeatureExtraction.exe"
-    INPUT_DIR = "Test"
+    INPUT_DIR = "Train"
+    LABELS_CSV = "AllLabels.csv"
     
     # Extraction Mode: "targeted", or "changepoint"
     EXTRACTION_MODE = "changepoint"
-    NUM_CHANGEPOINTS = 3 # Only used in "changepoint" mode
+    NUM_CHANGEPOINTS = 6 # Only used in "changepoint" mode
     # ---------------------
     
     # Calculate dynamic output directory
@@ -426,7 +454,8 @@ if __name__ == "__main__":
         openface_bin_path=OPENFACE_PATH, 
         output_root=OUTPUT_DIR,
         extraction_mode=EXTRACTION_MODE,
-        num_changepoints=NUM_CHANGEPOINTS
+        num_changepoints=NUM_CHANGEPOINTS,
+        labels_csv_path=LABELS_CSV
     )
     
     if not os.path.exists(INPUT_DIR):
