@@ -133,15 +133,43 @@ class VideoFeatureExtractor:
 
     def process_collection(self, video_dir):
         video_extensions = ('.mp4', '.avi', '.mov', '.mkv')
-        videos = [f for f in os.listdir(video_dir) if f.lower().endswith(video_extensions)]
+        video_paths = []
         
-        if not videos:
-            print(f"No videos found in {video_dir}. Please add some videos and try again.")
+        # Recursive search using os.walk
+        for root, dirs, files in os.walk(video_dir):
+            for file in files:
+                if file.lower().endswith(video_extensions):
+                    video_paths.append(os.path.join(root, file))
+        
+        if not video_paths:
+            print(f"No videos found in {video_dir}. Please check the path.")
             return
 
-        print(f"Found {len(videos)} videos. Starting extraction...")
-        for video_file in videos:
-            self.process_single_video(os.path.join(video_dir, video_file))
+        print(f"Found {len(video_paths)} videos across all subfolders. Starting batch extraction...")
+        
+        all_results = []
+        for i, video_path in enumerate(video_paths):
+            print(f"\n[Video {i+1}/{len(video_paths)}]")
+            df = self.process_single_video(video_path)
+            
+            if df is not None and not df.empty:
+                # Add metadata: where did this video come from?
+                rel_path = os.path.relpath(video_path, video_dir)
+                # Extract first 6 characters for person_id (e.g., '110002')
+                person_id = rel_path[:6]
+                df.insert(0, 'person_id', person_id)
+                df.insert(1, 'source_video_path', rel_path)
+                all_results.append(df)
+        
+        if all_results:
+            print("\n--- Merging all features into collective CSV ---")
+            master_df = pd.concat(all_results, ignore_index=True)
+            master_path = self.output_root / "collective_features.csv"
+            master_df.to_csv(master_path, index=False)
+            print(f"Success! Master CSV saved to: {master_path}")
+            print(f"Total rows in master file: {len(master_df)}")
+        else:
+            print("\nNo features were extracted from any videos.")
 
     def print_progress(self, iteration, total, prefix='', suffix='', decimals=1, length=50, fill='█', print_end="\r"):
         """
@@ -243,8 +271,8 @@ class VideoFeatureExtractor:
             print(f"No valid frames found for {video_name}. Skipping.")
             return
 
-        # 2. Pass 2: Extract selected frames and REMOVE BACKGROUND
-        print(f"Step 2/4: Extracting {len(selected_indices)} frames and removing background...")
+        # 2. Pass 2: Extract selected frames
+        print(f"Step 2/4: Extracting {len(selected_indices)} original frames...")
         cap = cv2.VideoCapture(video_path)
         curr_frame = 0
         extracted_count = 0
@@ -253,18 +281,16 @@ class VideoFeatureExtractor:
             if not success: break
             
             if curr_frame in selected_indices:
-                # Apply Rembg
-                clean_frame = self.apply_rembg(frame)
-                # Save as Raw (Clean)
-                cv2.imwrite(str(raw_dir / f"frame_{curr_frame:06d}.jpg"), clean_frame)
+                # Save as Raw (Original)
+                cv2.imwrite(str(raw_dir / f"frame_{curr_frame:06d}.jpg"), frame)
                 extracted_count += 1
                 self.print_progress(extracted_count, len(selected_indices), prefix='Extracting:', suffix='Complete', length=40)
             
             curr_frame += 1
         cap.release()
 
-        # 3. Run OpenFace on the CLEAN images
-        print("Step 3/4: Running OpenFace on background-removed images...")
+        # 3. Run OpenFace on the images
+        print("Step 3/4: Running OpenFace on extracted images...")
         openface_temp_dir = video_output_dir / "openface_temp"
         openface_temp_dir.mkdir(exist_ok=True)
         
@@ -286,6 +312,10 @@ class VideoFeatureExtractor:
         
         df_openface = pd.read_csv(openface_csv)
         df_openface.columns = df_openface.columns.str.strip()
+        
+        # Remove timestamp column as requested
+        if 'timestamp' in df_openface.columns:
+            df_openface = df_openface.drop(columns=['timestamp'])
 
         # 4. Pass 3: Visualize on CLEAN images
         print("Step 4/4: Generating final visualizations...")
@@ -327,15 +357,20 @@ class VideoFeatureExtractor:
             clean_frame = cv2.imread(str(clean_path))
             if clean_frame is None: continue
             
-            image_rgb = cv2.cvtColor(clean_frame, cv2.COLOR_BGR2RGB)
+            # Apply background removal for visualization ONLY
+            vis_frame = self.apply_rembg(clean_frame)
+            
+            image_rgb = cv2.cvtColor(vis_frame, cv2.COLOR_BGR2RGB)
             results = self.holistic.process(image_rgb)
             
-            combined_row = row.to_dict()
+            # Create combined row with frame_id as the first entry
+            combined_row = {'frame_id': i}
+            combined_row.update(row.to_dict())
+            
             if frame_num < len(mediapipe_features_all):
                 combined_row.update(mediapipe_features_all[frame_num])
             final_features.append(combined_row)
 
-            vis_frame = clean_frame.copy()
             if results.pose_landmarks:
                 mp_drawing.draw_landmarks(vis_frame, results.pose_landmarks, mp_holistic.POSE_CONNECTIONS)
 
@@ -368,16 +403,17 @@ class VideoFeatureExtractor:
         df_final = pd.DataFrame(final_features)
         df_final.to_csv(video_output_dir / f"{video_name}_selected_features.csv", index=False)
         shutil.rmtree(openface_temp_dir)
-        print(f"Success: {video_name} processed ({len(selected_indices)} frames extracted).")
+        print(f"Done: {video_name} processed.")
+        return df_final
 
 if __name__ == "__main__":
     # --- CONFIGURATION ---
     OPENFACE_PATH = "C:\\OpenFace\\FeatureExtraction.exe"
-    INPUT_DIR = "Train\\110002\\1100021015"
+    INPUT_DIR = "Test"
     
     # Extraction Mode: "targeted", or "changepoint"
     EXTRACTION_MODE = "changepoint"
-    NUM_CHANGEPOINTS = 6 # Only used in "changepoint" mode
+    NUM_CHANGEPOINTS = 3 # Only used in "changepoint" mode
     # ---------------------
     
     # Calculate dynamic output directory
