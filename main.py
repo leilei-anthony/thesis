@@ -436,12 +436,12 @@ class VideoFeatureExtractor:
 if __name__ == "__main__":
     # --- CONFIGURATION ---
     OPENFACE_PATH = "C:\\OpenFace\\FeatureExtraction.exe"
-    INPUT_DIR = "Train"
+    INPUT_DIR = "C:\\Users\\PC\\Desktop\\DAiSEE\\DataSet\\Train"
     LABELS_CSV = "AllLabels.csv"
     
     # Extraction Mode: "targeted", or "changepoint"
     EXTRACTION_MODE = "changepoint"
-    NUM_CHANGEPOINTS = 6 # Only used in "changepoint" mode
+    NUM_CHANGEPOINTS = 3 # Only used in "changepoint" mode
     # ---------------------
     
     # Calculate dynamic output directory
