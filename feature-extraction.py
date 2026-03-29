@@ -386,7 +386,7 @@ if __name__ == "__main__":
     LABELS_CSV = "AllLabels.csv"
     
     EXTRACTION_MODE = "changepoint"  # "targeted" or "changepoint"
-    NUM_CHANGEPOINTS = 6 
+    NUM_CHANGEPOINTS = 7 
     
     # --- PERFORMANCE & PARALLEL CONFIG ---
     FRAME_SKIP = 2         
